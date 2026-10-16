@@ -12,22 +12,22 @@ from sklearn.pipeline import make_pipeline
 
 st.set_page_config(page_title="Smart Ride-Sharing Optimizer", page_icon="🚖", layout="wide")
 
-ROOT   = Path(__file__).resolve().parent.parent
-CLEAN   = str(ROOT / "data/processed/cleaned_trips.csv")
-DEMAND  = str(ROOT / "data/processed/demand_labels.csv")
+ROOT     = Path(__file__).resolve().parent.parent
+CLEAN    = str(ROOT / "data/processed/cleaned_trips.csv")
+DEMAND   = str(ROOT / "data/processed/demand_labels.csv")
 HOTSPOTS = str(ROOT / "data/processed/hotspot_clusters.csv")
-RAW     = str(ROOT / "data/raw/yellow_tripdata_sample.csv")
+RAW      = str(ROOT / "data/raw/yellow_tripdata_sample.csv")
 
+LAT, LON       = "pickup_latitude", "pickup_longitude"
+DIST, PAX      = "trip_distance", "passenger_count"
+HOUR, DOW      = "hour", "day_of_week"
+FARE, DUR      = "fare_amount", "duration_min"
+CLUSTER, SURGE = "cluster", "high_demand"
 
-LAT, LON      = "pickup_latitude", "pickup_longitude"
-DIST, PAX     = "trip_distance", "passenger_count"
-HOUR, DOW     = "hour", "day_of_week"        
-FARE, DUR     = "fare_amount", "duration_min" 
-CLUSTER, SURGE = "cluster", "high_demand"     
 
 FARE_FEATS  = [DIST, PAX, HOUR, DOW]
 ETA_FEATS   = [DIST, HOUR, DOW, LAT, LON]
-SURGE_FEATS = [HOUR, DOW, CLUSTER]
+SURGE_FEATS = [HOUR, CLUSTER]          
 
 DAYS   = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
 COLORS = ["red","blue","green","purple","orange","darkred","cadetblue","black"]
@@ -43,14 +43,8 @@ def load(path, n=None):
 
 @st.cache_resource
 def train_models():
-    df = load(CLEAN, 100000)
-
    
-    if HOUR not in df.columns or DOW not in df.columns:
-        df["tpep_pickup_datetime"] = pd.to_datetime(df["tpep_pickup_datetime"])
-        df[HOUR] = df["tpep_pickup_datetime"].dt.hour
-        df[DOW]  = df["tpep_pickup_datetime"].dt.dayofweek
-
+    df = load(CLEAN, 100000)
     fare_lr = LinearRegression().fit(df[FARE_FEATS], df[FARE])
     fare_rf = RandomForestRegressor(
                   n_estimators=100, max_depth=12,
@@ -62,14 +56,24 @@ def train_models():
               KNeighborsRegressor(n_neighbors=11)
           ).fit(df[ETA_FEATS], df[DUR])
 
-    demand = load(DEMAND)
-    surge  = RandomForestClassifier(
-                 n_estimators=150, class_weight="balanced",
-                 n_jobs=-1, random_state=42
-             ).fit(demand[SURGE_FEATS], demand[SURGE])
-
-    hs       = load(HOTSPOTS)
+    
+    hs        = load(HOTSPOTS)
     centroids = hs.groupby(CLUSTER)[[LAT, LON]].mean()
+
+    demand = load(DEMAND)
+
+    def assign_cluster(row):
+        d = (centroids[LAT] - row["pickup_cell_lat"])**2 + \
+            (centroids[LON] - row["pickup_cell_lon"])**2
+        return int(d.idxmin())
+
+    demand[CLUSTER] = demand.apply(assign_cluster, axis=1)
+
+    surge = RandomForestClassifier(
+                n_estimators=150, class_weight="balanced",
+                n_jobs=-1, random_state=42
+            ).fit(demand[SURGE_FEATS], demand[SURGE])
+
     return fare_lr, fare_rf, eta, surge, centroids
 
 
@@ -87,8 +91,8 @@ def nearest_cluster(lat, lon, centroids):
     return int(d.idxmin())
 
 
-st.title(" Smart Ride-Sharing Demand & Pricing Optimizer")
-st.caption("Predict fare, ETA and explore demand hotspots ")
+st.title("🚖 Smart Ride-Sharing Demand & Pricing Optimizer")
+st.caption("Predict fare, ETA and explore demand hotspots")
 
 try:
     fare_lr, fare_rf, eta_model, surge_model, centroids = train_models()
@@ -116,17 +120,17 @@ with tab1:
     pax  = c5.number_input("Passengers", min_value=1, max_value=6, value=1)
 
     if st.button("Predict", type="primary", use_container_width=True):
-        dow    = DAYS.index(day)
-        dist   = float(haversine_miles(p_lat, p_lon, d_lat, d_lon))
+        dow   = DAYS.index(day)
+        dist  = float(haversine_miles(p_lat, p_lon, d_lat, d_lon))
+        cl    = nearest_cluster(p_lat, p_lon, centroids)
 
-        fare_in   = pd.DataFrame([[dist, pax, hour, dow]],    columns=FARE_FEATS)
-        eta_in    = pd.DataFrame([[dist, hour, dow, p_lat, p_lon]], columns=ETA_FEATS)
-        cl        = nearest_cluster(p_lat, p_lon, centroids)
-        surge_in  = pd.DataFrame([[hour, dow, cl]],           columns=SURGE_FEATS)
+        fare_in  = pd.DataFrame([[dist, pax, hour, dow]], columns=FARE_FEATS)
+        eta_in   = pd.DataFrame([[dist, hour, dow, p_lat, p_lon]], columns=ETA_FEATS)
+        surge_in = pd.DataFrame([[hour, cl]], columns=SURGE_FEATS)   
 
         fare_rf_pred = fare_rf.predict(fare_in)[0]
         fare_lr_pred = fare_lr.predict(fare_in)[0]
-        eta_min      = eta_model.predict(eta_in)[0]         
+        eta_min      = eta_model.predict(eta_in)[0]       
         surge_prob   = surge_model.predict_proba(surge_in)[0][1]
         is_high      = surge_prob >= 0.5
 
@@ -183,7 +187,7 @@ with tab3:
     COMPARISON = ROOT / "reports/model_comparison.csv"
     FIGS       = ROOT / "reports/figures"
 
-    for label, path in [("Best model per task",       SUMMARY),
+    for label, path in [("Best model per task",          SUMMARY),
                          ("Surge classification metrics", COMPARISON)]:
         if path.exists():
             st.markdown(f"**{label}**")
@@ -202,9 +206,9 @@ with tab3:
 
 with tab4:
     st.subheader("Data explorer")
-    files = {"Raw sample":      RAW,
-             "Cleaned trips":   CLEAN,
-             "Demand labels":   DEMAND,
+    files = {"Raw sample"      : RAW,
+             "Cleaned trips"   : CLEAN,
+             "Demand labels"   : DEMAND,
              "Hotspot clusters": HOTSPOTS}
     pick = st.selectbox("Dataset", list(files))
     d    = load(files[pick])
