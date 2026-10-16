@@ -12,10 +12,11 @@ from sklearn.pipeline import make_pipeline
 
 st.set_page_config(page_title="Smart Ride-Sharing Optimizer", page_icon="🚖", layout="wide")
 
-CLEAN = "data/processed/cleaned_trips.csv"
-DEMAND = "data/processed/demand_labels.csv"
-HOTSPOTS = "data/processed/hotspot_clusters.csv"
-RAW = "data/raw/yellow_tripdata_sample.csv"
+ROOT = Path(__file__).resolve().parent.parent
+CLEAN = str(ROOT / "data/processed/cleaned_trips.csv")
+DEMAND = str(ROOT / "data/processed/demand_labels.csv")
+HOTSPOTS = str(ROOT / "data/processed/hotspot_clusters.csv")
+RAW = str(ROOT / "data/raw/yellow_tripdata_sample.csv")
 
 LAT, LON = "pickup_latitude", "pickup_longitude"
 DIST, PAX = "trip_distance", "passenger_count"
@@ -152,17 +153,23 @@ with tab2:
 
 with tab3:
     st.subheader("State-of-the-art model comparison")
-    for label, path in [("Best model per task", "reports/summary_best_models.csv"), ("Surge classification metrics", "reports/model_comparison.csv")]:
-        if Path(path).exists():
+    SUMMARY = ROOT / "reports/summary_best_models.csv"
+    COMPARISON = ROOT / "reports/model_comparison.csv"
+    FIGS = ROOT / "reports/figures"
+
+    for label, path in [("Best model per task", SUMMARY), ("Surge classification metrics", COMPARISON)]:
+        if path.exists():
             st.markdown(f"**{label}**")
             st.dataframe(pd.read_csv(path), use_container_width=True, hide_index=True)
-    figs = sorted(Path("reports/figures").glob("*.png")) if Path("reports/figures").exists() else []
+
+    figs = sorted(FIGS.glob("*.png")) if FIGS.exists() else []
     if figs:
         st.markdown("**Figures**")
         cols = st.columns(2)
         for i, f in enumerate(figs):
             cols[i % 2].image(str(f), caption=f.stem.replace("_", " ").title(), use_container_width=True)
-    if not figs and not Path("reports/summary_best_models.csv").exists():
+
+    if not figs and not SUMMARY.exists():
         st.info("Add reports/summary_best_models.csv and reports/figures/*.png to the repo to show results here.")
 
 with tab4:
