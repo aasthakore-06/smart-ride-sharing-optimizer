@@ -10,7 +10,7 @@ from sklearn.neighbors import KNeighborsRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
-st.set_page_config(page_title="Smart Ride-Sharing Optimizer", page_icon="🚖, layout="wide")
+st.set_page_config(page_title="Smart Ride-Sharing Optimizer", page_icon="🚖", layout="wide")
 
 ROOT   = Path(__file__).resolve().parent.parent
 CLEAN   = str(ROOT / "data/processed/cleaned_trips.csv")
